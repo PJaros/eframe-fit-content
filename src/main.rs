@@ -1,5 +1,5 @@
 use eframe::egui;
-use eframe::egui::{vec2, Vec2, Visuals};
+use eframe::egui::{Vec2, Visuals, vec2};
 
 fn main() -> eframe::Result {
     let app = AppGUI::default();
@@ -10,18 +10,23 @@ fn main() -> eframe::Result {
     )
 }
 
+enum Stage {
+    PreRender,
+    FirstRender,
+    FirstResize,
+    Initialized,
+}
+
 struct AppGUI {
-    _do_pre_render: bool,
-    _used_size: Option<Vec2>,
-    _first_resize: bool,
+    _render_stage: Stage,
+    _initial_size: Option<Vec2>,
 }
 
 impl Default for AppGUI {
     fn default() -> Self {
         Self {
-            _do_pre_render: true,
-            _used_size: None,
-            _first_resize: true,
+            _render_stage: Stage::PreRender,
+            _initial_size: None,
         }
     }
 }
@@ -40,11 +45,11 @@ impl AppGUI {
             egui::Label::new(egui::RichText::new("Hello, world!").heading())
                 .wrap_mode(egui::TextWrapMode::Extend),
         );
-        ui.label(format!("self._used_size: {}", match self._used_size {
-            None => vec2(123.0123456, 123.0123456),
-            Some(i) => i,
-        }));
-
+        ui.label(format!(
+            "self._used_size: {}",
+            self._initial_size
+                .unwrap_or_else(|| vec2(123.012_344, 123.012_344))
+        ));
         for n in 1..=10 {
             ui.label(format!("Line: {}", n));
         }
@@ -54,24 +59,29 @@ impl AppGUI {
 impl eframe::App for AppGUI {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         ctx.set_visuals(Visuals::light());
-        if self._do_pre_render {
-            let window_size = ctx.used_size();
-            self.pre_render(ctx);
-            println!("window_size: {} x {}", window_size.x, window_size.y);
-            if !(window_size.y < 0.0 || window_size.x < 0.0) {
-                self._used_size = Some(window_size);
-                self._do_pre_render = false;
+        match self._render_stage {
+            Stage::PreRender => {
+                self.pre_render(ctx);
+                self._initial_size = Some(ctx.used_size());
+                self._render_stage = Stage::FirstRender;
             }
-        } else {
-            if self._first_resize {
-                if let Some(size) = self._used_size {
+            Stage::FirstRender => {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    self.render(ui);
+                });
+                self._render_stage = Stage::FirstResize;
+            }
+            Stage::FirstResize => {
+                if let Some(size) = self._initial_size {
                     ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+                    self._render_stage = Stage::Initialized;
                 }
-                self._first_resize = false;
             }
-            egui::CentralPanel::default().show(ctx, |ui| {
-                self.render(ui);
-            });
+            Stage::Initialized => {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    self.render(ui);
+                });
+            }
         }
     }
 }
